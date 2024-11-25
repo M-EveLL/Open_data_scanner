@@ -1,5 +1,4 @@
-"""Parses AAFC's open data on Canada's Open Government Portal (as well as the 
-departmental AAFC Open Data Catalogue in a further version), to provide the 
+"""Parses open data on Canada's Open Government Portal, to provide the 
 user with a complete inventory of datasets and resources in csv files.
 """
 
@@ -8,8 +7,8 @@ from typing import List, NoReturn
 import warnings
 from colorama import Fore
 
-from .constants import REGISTRY_BASE_URL, CATALOGUE_BASE_URL, AAFC_ORG_ID
-from .tools import RequestsDataCatalogue, DriverDataCatalogue
+from .constants import REGISTRY_BASE_URL
+from .tools import RequestsDataCatalogue
 from .inventories import Inventory
 
 
@@ -22,9 +21,6 @@ def display_exit_message() -> NoReturn:
     user has time to read all logged messages if needed before closing 
     console.
     """
-    for var in globals():
-        if isinstance(var, DriverDataCatalogue):
-            var.driver.close()
     print(Fore.CYAN + '\nClick Enter to exit.' + Fore.RESET)
     input()
 
@@ -33,75 +29,40 @@ def main() -> NoReturn:
     """Main code."""
 
     print()
-    print(Fore.YELLOW + '\tAAFC Data Scanner' + Fore.RESET)
+    print(Fore.YELLOW + '\tOpen Data Portal Scanner' + Fore.RESET)
 
-    # prompts user for catalogue's check
-    must_scan_catalogue = False
-    print('\nReady to scan information from open.canada.ca registry.')
-    print('Do you also wish to scan AAFC Open Data Catalogue?')
-    print(Fore.CYAN + 'Enter y for yes:' + Fore.RESET, end=" ")
-    response = str(input())
-    if response.lower() == 'y':
-        must_scan_catalogue = True
+    # Prompt the user for department input or selection
+    print('\nReady to scan information from the Open Data Portal (Registry).')
+    print('Please select or enter a department for the scan.')
 
-    if must_scan_catalogue:
-        print('\nFor the catalogue to be scanned, please make sure Edge is',
-              'installed on your computer \nand allows you to automatically',
-              'authenticate as an AAFC employee.')
+    # Predefined list of departments (can be expanded as needed)
+    departments = ['Agriculture and Agri-Food Canada', 'Environment and Climate Change Canada', 
+                   'Health Canada', 'Transport Canada', 'Custom Department']
 
-    print('\nCommencing scan.')
-    inventory = Inventory()
+    print(Fore.CYAN + "Available departments:" + Fore.RESET)
+    for i, dept in enumerate(departments, 1):
+        print(f"{i}. {dept}")
 
-    # PHASE 1: Inventorying the whole registry
+    print("Enter the number corresponding to the department, or type a custom department name:")
+    department_choice = input()
+
+    if department_choice.isdigit() and 1 <= int(department_choice) <= len(departments):
+        department = departments[int(department_choice) - 1]
+    else:
+        department = department_choice  # Allow custom department name input
+
+    print(f"Scanning datasets for department: {department}")
+
+    # PHASE 1: Inventorying the Open Data Portal (Registry)
 
     registry = RequestsDataCatalogue(REGISTRY_BASE_URL)
-    registry_datasets: List[str] = registry.search_datasets(
-        owner_org=AAFC_ORG_ID)
+    registry_datasets: List[str] = registry.search_datasets(owner_org=department)
     print(Fore.GREEN)
-    print(f'{len(registry_datasets)} datasets were found on the registry.' +\
-           Fore.RESET)
+    print(f'{len(registry_datasets)} datasets were found for the department {department} on the registry.' + Fore.RESET)
+
+    # Create and update inventory
+    inventory = Inventory()
     inventory.inventory(registry, registry_datasets)
-
-    if must_scan_catalogue:
-
-        # PHASE 2: Adding datasets from the catalogue
-
-        # Listing datasets on catalogue
-        catalogue = DriverDataCatalogue(CATALOGUE_BASE_URL)
-        catalogue_datasets: List[str] = catalogue.list_datasets()
-
-        to_parse: List[str] = [id for id in catalogue_datasets
-                               if id not in registry_datasets]
-        already_parsed : List[str] = [id for id in catalogue_datasets
-                                      if id in registry_datasets]
-        if len(to_parse) == 0:
-            print(Fore.GREEN)
-            print('No additional datasets were found on AAFC Open Data',
-                  'Catalogue.' + Fore.RESET)
-        else:
-            print(Fore.GREEN)
-            print(f'{len(to_parse)} additional datasets',
-                'were found on AAFC Open Data Catalogue.' + Fore.RESET)
-
-        # For those already on registry, update inventories
-        if already_parsed:
-            print('\nUpdating catalogue info of already-parsed datasets...')
-            inventory.update_platform_info('catalogue', catalogue,
-                                           already_parsed)
-
-        # Adding datasets that are only on the departmental catalogue
-        if to_parse:
-            print('\nNow extracting info of catalogue datasets that were not '
-                  'parsed yet.')
-            inventory.inventory(catalogue, to_parse)
-
-            # PHASE 3: Verifying catalogue's datasets availability on registry
-
-            print('\nChecking if some of the catalogue\'s datasets are on',
-                  'the open registry too, \npublished by another department',
-                  'in partnership with AAFC.')
-            inventory.update_platform_info('registry', registry, to_parse)
-
 
     # FINISHING
 
@@ -117,9 +78,8 @@ def main() -> NoReturn:
     # Completing empty fields
     inventory.datasets = inventory.datasets.fillna({
         'on_registry': False,
-        'on_catalogue': False,
-        'org': 'aafc-aac',
-        'org_title': 'Agriculture and Agri-Food Canada'})
+        'org': department,
+        'org_title': department})
 
     # Exporting inventories
     print()
